@@ -2,7 +2,6 @@
 
 **Welcome to iTED Nexus!**
 A real-world project to level up the iTED CCNA Practice Platform.  
-Built by students from CCTB’s DEAC, UEID, SOAC, and BMTC programs working together on a production-grade app.
 
 ---
 
