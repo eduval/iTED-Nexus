@@ -1,0 +1,105 @@
+body {
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.card img {
+    max-height: 64px;
+    object-fit: contain;
+}
+
+.btn {
+    font-size: 1rem;
+}
+
+.card {
+    border-radius: 1rem;
+}
+
+#questionText img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.5rem auto;
+}
+
+#quizWrapper.loading #quizCard {
+    filter: blur(4px);
+    pointer-events: none;
+    transition: filter 0.3s ease;
+}
+
+#loadingOverlay {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    z-index: 20;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    font-size: 1.5rem;
+    border-radius: 1rem;
+}
+
+.mode-card {
+    position: relative;
+    background-size: cover;
+    background-position: center;
+    border: none;
+    overflow: hidden;
+    transition: transform 0.3s ease;
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mode-card .overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(0px);
+    transition: backdrop-filter 0.3s ease, background-color 0.3s ease;
+    z-index: 1;
+}
+
+.mode-card .content {
+    z-index: 2;
+}
+
+.mode-card:hover {
+    transform: scale(1.02);
+}
+
+.mode-card:hover .overlay {
+    backdrop-filter: blur(4px);
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+
+#quizWrapper.loading #loadingOverlay {
+    display: flex;
+}
+
+.drop-target {
+    vertical-align: middle;
+    cursor: pointer;
+    background-color: #f9f9f9;
+    transition: background-color 0.3s;
+}
+
+.drop-target:hover {
+    background-color: #e0e0e0;
+}
+
+.drag-item.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}

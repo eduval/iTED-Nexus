@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login - CCNA Practice App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+    <!-- Firebase SDKs (compat version) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+    <!-- Your Firebase initialization -->
+    <script src="js/firebaseApp.js?v=20250620"></script>
+    <script src="js/concurrentUsers.js?v=20250620"></script>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-NW68EXW9LF"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+
+        gtag('config', 'G-NW68EXW9LF');
+    </script>
+</head>
+
+<body class="bg-light">
+    <!-- Alert for Online Users -->
+    <div class="container mt-4">
+        <div id="userCount" class="alert alert-info text-center shadow-sm" role="alert">
+            Loading online users...
+        </div>
+    </div>
+
+    <div class="container d-flex align-items-center justify-content-center mt-5">
+        <div class="card shadow-sm p-4" style="width: 100%; max-width: 400px;">
+            <h3 class="text-center mb-4">Login</h3>
+
+            <form id="loginForm">
+                <div class="mb-3">
+                    <label for="email" class="form-label">Email address</label>
+                    <input type="email" class="form-control" id="email" required autofocus />
+                </div>
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="password" required />
+                </div>
+
+                <div id="error" class="text-danger mb-3" style="display: none;"></div>
+
+                <button type="submit" class="btn btn-primary w-100" id="loginBtn">
+                    <span id="loginText">Login</span>
+                    <div class="spinner-border spinner-border-sm d-none" id="spinner" role="status"></div>
+                </button>
+                <button type="submit" class="btn btn-secondary w-100 mt-2" id="subscribeBtn">
+                    <span id="loginText">Subscribe for <strong>$25 CAD/month</strong></span>
+                    <div class="spinner-border spinner-border-sm d-none" id="spinner" role="status"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login Logic -->
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const loginForm = document.getElementById("loginForm");
+            const loginBtn = document.getElementById("loginBtn");
+            const subscribeBtn = document.getElementById("subscribeBtn");
+            const loginText = document.getElementById("loginText");
+            const spinner = document.getElementById("spinner");
+            const errorDiv = document.getElementById("error");
+
+            async function logUserLoginInfo(user) {
+                try {
+                    const res = await fetch("https://ited.org.ec/ipinfo.php");
+                    const data = await res.json();
+
+                    const ipAddress = data.ip || null;
+                    const geo = data.geo || {};
+
+                    const logRef = firebase.database().ref(`loginLogs/${user.uid}`).push();
+
+                    await logRef.set({
+                        timestamp: Date.now(),
+                        ipAddress,
+                        city: geo.city || null,
+                        region: geo.region || null,
+                        country: geo.country || null,
+                        isp: geo.connection?.isp || null,
+                        timezone: geo.timezone?.id || null,
+                        userAgent: navigator.userAgent
+                    });
+                } catch (err) {
+                    console.warn("Could not fetch IP info:", err.message);
+                }
+            }
+
+            subscribeBtn.addEventListener("click", (e) => {
+                window.location.href = 'subscribe.html';
+            });
+
+
+            loginForm.addEventListener("submit", (e) => {
+                console.log("Login form submitted!");
+                e.preventDefault();
+
+                const email = document.getElementById("email").value.trim();
+                const password = document.getElementById("password").value;
+
+                loginBtn.disabled = true;
+                spinner.classList.remove("d-none");
+                loginText.textContent = "Logging in...";
+                errorDiv.style.display = "none";
+
+                firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION)
+                    .then(() => {
+                        return firebase.auth().signInWithEmailAndPassword(email, password);
+                    })
+                    .then(async (userCredential) => {
+                        const user = userCredential.user;
+                        console.log("Login success:", user.email);
+
+                        await logUserLoginInfo(user);
+                        window.location.href = "dashboard.html";
+                    })
+                    .catch((error) => {
+                        console.error("Login error:", error.code, error.message);
+                        errorDiv.textContent = error.message;
+                        errorDiv.style.display = "block";
+                        loginBtn.disabled = false;
+                        spinner.classList.add("d-none");
+                        loginText.textContent = "Login";
+                    });
+
+            });
+        });
+    </script>
+
+
+    <!-- Online Users Message -->
+    <script>
+        function updateUserMessage(count) {
+            const el = document.getElementById("userCount");
+            if (!el) return;
+
+            if (count === 0) {
+                el.classList.replace("alert-info", "alert-warning");
+                el.textContent = "Be the first to practice today! 👨‍💻";
+            } else if (count === 1) {
+                el.textContent = `💪 There are ${count} students practicing now — focus time! 🧠`;
+            } else if (count <= 5) {
+                el.textContent = `You're not alone! 💪 There are ${count} students practicing now.`;
+            } else {
+                el.classList.replace("alert-info", "alert-success");
+                el.textContent = `🔥 ${count} learners are connected right now. You're part of something big!`;
+            }
+        }
+
+        function showOnlineUsers() {
+            const onlineRef = db.ref("onlineUsers");
+            onlineRef.on("value", (snapshot) => {
+                const count = snapshot.numChildren();
+                updateUserMessage(count);
+            });
+        }
+
+        showOnlineUsers();
+
+        // Redirect logic based on Firebase auth
+        firebase.auth().onAuthStateChanged(function (user) {
+            if (user) {
+                window.location.href = 'dashboard.html';
+            }
+        });
+    </script>
+</body>
+
+</html>
