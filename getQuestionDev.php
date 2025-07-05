@@ -1,11 +1,11 @@
 <?php
-// Lista de dominios permitidos
+// Allowed Domains
 $allowed_origins = [
     'http://localhost:5051',
     'http://localhost:5500'
 ];
 
-// Detectar el origen de la petici贸n
+// Detect Origin
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array($origin, $allowed_origins)) {
     header("Access-Control-Allow-Origin: $origin");
@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 header("Content-Type: application/json");
 
-// Obtener el ID
+// Get el ID
 $id = $_GET['id'] ?? null;
 if (!$id) {
     http_response_code(400);
@@ -30,8 +30,8 @@ if (!$id) {
     exit;
 }
 
-// Cargar XML desde ruta protegida
-$questionsFile = '/home/itedodgl/data/questions_ddwtos.xml';
+// Local path to the XML file containing all questions (adjust this path for your server)
+$questionsFile = '[PATH TO XML FILE]/questions_ddwtos.xml';
 
 libxml_use_internal_errors(true);
 $xml = simplexml_load_file($questionsFile);
@@ -46,7 +46,7 @@ if ($xml === false) {
     exit;
 }
 
-// Buscar la pregunta por ID
+// Search question by ID
 foreach ($xml->question as $question) {
     $name = (string)$question->name->text;
     if ($name !== $id) continue;
@@ -54,12 +54,12 @@ foreach ($xml->question as $question) {
     $type = (string)$question['type'];
     $questionText = (string)$question->questiontext->text;
 
-    // Reemplazar im谩genes codificadas
+    // Replace img
     if (isset($question->questiontext->file)) {
         foreach ($question->questiontext->file as $file) {
             $fileName = (string)$file['name'];
             $fileData = trim((string)$file);
-            $mimeType = 'image/jpeg'; // Puedes adaptar seg煤n extensi贸n
+            $mimeType = 'image/jpeg';
             $base64 = "data:$mimeType;base64,$fileData";
             $questionText = str_replace("@@PLUGINFILE@@/$fileName", $base64, $questionText);
         }
