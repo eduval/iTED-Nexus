@@ -29,7 +29,7 @@ let questionStartTime = null;
 const generateQuestionIds = (count) => {
     const ids = new Set();
     while (ids.size < count) {
-        const n = Math.floor(Math.random() * 300) + 1;
+        const n = Math.floor(Math.random() * 61) + 1;
         if (n === 238 || n === 277) continue; // Skip Q238 and Q277
         ids.add(`Q${n}`);
     }
@@ -130,7 +130,7 @@ const loadQuestion = async (index) => {
 
     try {
 
-        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`);
+        const response = await fetch(`https://ited.org.ec/getQuestionDev.php?id=${encodeURIComponent(questionId)}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const data = await response.json();
@@ -259,6 +259,7 @@ const loadQuestion = async (index) => {
         document.getElementById('questionText').textContent = 'Failed to load question.';
         document.getElementById('answersContainer').innerHTML = '';
         document.getElementById('feedback').textContent = '';
+        console.log(questionId);
     } finally {
         quizWrapper.classList.remove('loading');
     }
@@ -291,12 +292,13 @@ function enableImageZoom() {
 function renderDdwtos(question, files) {
     // Skip drag-and-drop questions for now
     if (question.type === 'ddwtos') {
-        console.warn(`Skipping drag-and-drop question: ${question.id}`);
+        loadQuestion(currentIndex);
+        //console.warn(`Skipping drag-and-drop question: ${question.id}`);
         if (currentIndex + 1 < questionIds.length) {
             currentIndex++;
-            loadQuestion(currentIndex);
+            loadQuestion(Q5);
         } else {
-            loadQuestion('Q245');
+            loadQuestion('Q5');
         }
 
         //   loadNextQuestion(); // or whatever function you use to move to the next
