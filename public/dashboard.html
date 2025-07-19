@@ -13,14 +13,24 @@
 
     <script src="js/firebaseApp.js?v=20250620"></script>
     <script src="js/auth.js?v=20250620"></script>
+
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-NW68EXW9LF"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
         function gtag() { dataLayer.push(arguments); }
         gtag('js', new Date());
-
         gtag('config', 'G-NW68EXW9LF');
+    </script>
+
+    <!-- ✅ ADDED: Redirect to dashboard if already logged in -->
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const user = localStorage.getItem('user');
+            if (user) {
+                window.location.href = 'dashboard.html';
+            }
+        });
     </script>
 </head>
 
@@ -76,7 +86,7 @@
             </div>
 
             <div class="col-md-6">
-                <a href=" review.html" class="text-decoration-none">
+                <a href="review.html" class="text-decoration-none">
                     <div class="mode-card card shadow h-100 text-white text-center p-4"
                         style="background-image: url('images/review.jpeg');">
                         <div class="overlay"></div>
@@ -88,7 +98,6 @@
                 </a>
             </div>
         </div>
-
 
         <!-- Footer -->
         <footer class="text-center mt-5" style="font-size: 0.9rem; color: #555;">
