@@ -33,7 +33,6 @@ const saveIncorrectQuestion = (question) => {
     }
 };
 
-
 // Utility functions
 const clearIncorrectQuestions = () => {
     window.incorrectQuestions = [];
@@ -150,7 +149,19 @@ const loadQuestion = async (index) => {
     document.getElementById('nextBtn').disabled = true;
 
     try {
-        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionIds[index])}`);
+        // 🔐 Get Firebase ID token and send it with the request
+        const user = firebase.auth().currentUser;               // 🔐
+        const token = await user.getIdToken();                  // 🔐
+
+        const response = await fetch(
+            `https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionIds[index])}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`          // 🔐
+                }
+            }
+        );
+
         const data = await response.json();
         currentQuestion = data;
 
@@ -250,7 +261,6 @@ const renderMultichoice = (question, index) => {
                 isCorrect = false;
             }
         });
-
 
         logAnswer({
             questionId: currentQuestion.id,
@@ -364,7 +374,6 @@ const finishExam = () => {
     document.getElementById('correctCount').textContent = correctCount;
     document.getElementById('incorrectCount').textContent = TOTAL_QUESTIONS - correctCount;
 };
-
 
 // Navigation Controls
 document.getElementById('nextBtn').onclick = () => {
