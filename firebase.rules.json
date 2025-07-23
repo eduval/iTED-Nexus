@@ -1,0 +1,53 @@
+{
+    "rules": {
+        "onlineUsers": {
+            "$uid": {
+                ".read": true,
+                ".write": "auth != null && auth.uid === $uid && auth.token.role === 'student'",
+                ".validate": "newData.hasChildren(['status']) && newData.child('status').isString()"
+            }
+        },
+        "sessions": {
+            "$sessionId": {
+                ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'student')",
+                ".write": "auth != null && auth.token.role === 'admin'",
+                ".validate": "newData.hasChildren(['startTime', 'endTime']) && newData.child('startTime').isNumber() && newData.child('endTime').isNumber()"
+            }
+        },
+        "meta": {
+            "orderCounter": {
+                ".read": "auth != null && auth.token.role === 'admin'",
+                ".write": "auth != null && auth.token.role === 'admin'",
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+            }
+        },
+        "questionReports": {
+            "$reportId": {
+                ".read": "auth != null && auth.token.role === 'admin'",
+                ".write": "auth != null && auth.token.role === 'student'",
+                ".validate": "newData.hasChildren(['questionId', 'reason']) && newData.child('questionId').isString() && newData.child('reason').isString()"
+            }
+        },
+        "userLogs": {
+            "$logId": {
+                ".read": "auth != null && auth.token.role === 'admin'",
+                ".write": "auth != null && auth.token.role === 'admin'",
+                ".validate": "newData.hasChildren(['userId', 'action', 'timestamp']) && newData.child('userId').isString() && newData.child('action').isString() && newData.child('timestamp').isNumber()"
+            }
+        },
+        "loginLogs": {
+            "$logId": {
+                ".read": "auth != null && auth.token.role === 'admin'",
+                ".write": "auth != null && auth.token.role === 'admin'",
+                ".validate": "newData.hasChildren(['userId', 'timestamp']) && newData.child('userId').isString() && newData.child('timestamp').isNumber()"
+            }
+        },
+        "reviewLogs": {
+            "$logId": {
+                ".read": "auth != null && auth.token.role === 'admin'",
+                ".write": "auth != null && auth.token.role === 'student'",
+                ".validate": "newData.hasChildren(['reviewId', 'score', 'timestamp']) && newData.child('reviewId').isString() && newData.child('score').isNumber() && newData.child('timestamp').isNumber()"
+            }
+        }
+    }
+}
