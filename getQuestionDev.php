@@ -1,11 +1,11 @@
 <?php
-// Allowed Domains
+// ------------------------------------------------------------
+// CORS (kept as-is)
 $allowed_origins = [
     'http://localhost:5051',
     'http://localhost:5500'
 ];
 
-// Detect Origin
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array($origin, $allowed_origins)) {
     header("Access-Control-Allow-Origin: $origin");
@@ -14,7 +14,7 @@ if (in_array($origin, $allowed_origins)) {
     header("Access-Control-Allow-Headers: Content-Type, Authorization");
 }
 
-// Preflight request
+// Preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
@@ -22,7 +22,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 header("Content-Type: application/json");
 
-// Get el ID
+// ------------------------------------------------------------
+// === TOKEN VERIFY ===
+// Shared check: blocks if no/invalid Firebase ID token
+require __DIR__ . '/lib/check_token.php';
+// $FIREBASE_UID now holds the user id if you need it
+// ------------------------------------------------------------
+
+// Get the ID
 $id = $_GET['id'] ?? null;
 if (!$id) {
     http_response_code(400);
@@ -30,7 +37,7 @@ if (!$id) {
     exit;
 }
 
-// Local path to the XML file containing all questions (adjust this path for your server)
+// Local path to the XML file containing all questions
 $questionsFile = '[PATH TO XML FILE]/questions_ddwtos.xml';
 
 libxml_use_internal_errors(true);
@@ -51,28 +58,28 @@ foreach ($xml->question as $question) {
     $name = (string)$question->name->text;
     if ($name !== $id) continue;
 
-    $type = (string)$question['type'];
+    $type         = (string)$question['type'];
     $questionText = (string)$question->questiontext->text;
 
-    // Replace img
+    // Replace embedded images
     if (isset($question->questiontext->file)) {
         foreach ($question->questiontext->file as $file) {
             $fileName = (string)$file['name'];
             $fileData = trim((string)$file);
             $mimeType = 'image/jpeg';
-            $base64 = "data:$mimeType;base64,$fileData";
+            $base64   = "data:$mimeType;base64,$fileData";
             $questionText = str_replace("@@PLUGINFILE@@/$fileName", $base64, $questionText);
         }
     }
 
     if ($type === 'multichoice') {
-        $answers = [];
+        $answers        = [];
         $correctIndexes = [];
-        $index = 0;
-        $isSingle = strtolower((string)$question->single) === 'true';
+        $index          = 0;
+        $isSingle       = strtolower((string)$question->single) === 'true';
 
         foreach ($question->answer as $answer) {
-            $ansText = trim((string)$answer->text);
+            $ansText   = trim((string)$answer->text);
             $answers[] = $ansText;
 
             if (floatval($answer['fraction']) > 0) {
@@ -82,30 +89,28 @@ foreach ($xml->question as $question) {
         }
 
         echo json_encode([
-            'id' => $id,
-            'type' => 'multichoice',
-            'text' => $questionText,
-            'options' => $answers,
+            'id'             => $id,
+            'type'           => 'multichoice',
+            'text'           => $questionText,
+            'options'        => $answers,
             'correctIndexes' => $correctIndexes,
-            'isSingle' => $isSingle
+            'isSingle'       => $isSingle
         ]);
         exit;
-    }
-
-    elseif ($type === 'ddwtos') {
+    } elseif ($type === 'ddwtos') {
         $groups = [];
         foreach ($question->dragbox as $drag) {
             $groupId = (string)$drag->group;
-            $label = trim((string)$drag->text);
+            $label   = trim((string)$drag->text);
             $groups[$groupId] = $label;
         }
 
-        $items = [];
-        $pattern = '/(.+?)\s*\[\[(\d+)\]\]/';
+        $items   = [];
+        $pattern = '/(.+?)\\s*\\[\\[(\\d+)\\]\\]/';
         if (preg_match_all($pattern, $questionText, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $desc = trim($match[1]);
-                $grp = $match[2];
+                $grp  = $match[2];
                 $items[] = ['text' => $desc, 'group' => $grp];
             }
         }
@@ -118,52 +123,46 @@ foreach ($xml->question as $question) {
         }
 
         echo json_encode([
-            'id' => $id,
-            'type' => 'ddwtos',
-            'text' => $questionText,
+            'id'     => $id,
+            'type'   => 'ddwtos',
+            'text'   => $questionText,
             'groups' => $groups,
-            'items' => $items
+            'items'  => $items
         ]);
         exit;
-    }
-
-    elseif ($type === 'matching') {
+    } elseif ($type === 'matching') {
         $pairs = [];
         foreach ($question->subquestion as $sub) {
-            $left = trim((string)$sub->text);
+            $left  = trim((string)$sub->text);
             $right = trim((string)$sub->answer->text);
             $pairs[] = ['left' => $left, 'right' => $right];
         }
-    
 
         echo json_encode([
-            'id' => $id,
+            'id'   => $id,
             'type' => 'matching',
             'text' => $questionText,
-            'pairs' => $pairs
+            'pairs'=> $pairs
+        ]);
+        exit;
+    } elseif ($type === 'truefalse') {
+        $correctAnswer = null;
+        foreach ($question->answer as $answer) {
+            if (floatval($answer['fraction']) > 0) {
+                $correctAnswer = strtolower(trim((string)$answer->text)) === 'true';
+                break;
+            }
+        }
+
+        echo json_encode([
+            'id'      => $id,
+            'type'    => 'truefalse',
+            'text'    => $questionText,
+            'correct' => $correctAnswer
         ]);
         exit;
     }
-    
-    elseif ($type === 'truefalse') {
-    $correctAnswer = null;
-    foreach ($question->answer as $answer) {
-        if (floatval($answer['fraction']) > 0) {
-            $correctAnswer = strtolower(trim((string)$answer->text)) === 'true';
-            break;
-        }
-    }
-
-    echo json_encode([
-        'id' => $id,
-        'type' => 'truefalse',
-        'text' => $questionText,
-        'correct' => $correctAnswer
-    ]);
-    exit;
-}
 }
 
 http_response_code(404);
 echo json_encode(['error' => 'Question not found']);
-
