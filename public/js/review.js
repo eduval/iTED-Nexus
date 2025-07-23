@@ -38,7 +38,29 @@ const loadQuestion = async (index) => {
     reviewWrapper.classList.add('loading');
 
     try {
-        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`);
+        // 🔐 attach Firebase token
+const user = firebase.auth().currentUser;
+if (!user) throw new Error('Not logged in');
+let token = await user.getIdToken(false);
+
+let response = await fetch(
+  `https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`,
+  {
+    headers: { Authorization: `Bearer ${token}` }
+  }
+);
+
+// retry once if expired
+if (response.status === 401 || response.status === 403) {
+  token = await user.getIdToken(true);
+  response = await fetch(
+    `https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` }
+    }
+  );
+}
+
         const data = await response.json();
         currentQuestion = data;
 
