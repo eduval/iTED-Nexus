@@ -1,3 +1,5 @@
+// timed.js
+
 // Initialize incorrectQuestions from sessionStorage (shared between both modes)
 window.incorrectQuestions = JSON.parse(sessionStorage.getItem('incorrectQuestions') || '[]');
 
@@ -101,6 +103,8 @@ const lockAnswerDueToTimeout = () => {
     });
 };
 
+// === AUTH HEADER ADD ===
+// We attach the Firebase ID token to each API call so PHP can verify the user.
 const loadQuestion = async (index) => {
     document.getElementById('nextBtn').disabled = true;
     const questionId = questionIds[index];
@@ -108,7 +112,24 @@ const loadQuestion = async (index) => {
     quizWrapper.classList.add('loading');
 
     try {
-        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`);
+        const user = firebase.auth().currentUser;
+        if (!user) throw new Error('Not logged in');
+        let token = await user.getIdToken(false);
+
+        let response = await fetch(
+            `https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        // retry once if token expired
+        if (response.status === 401 || response.status === 403) {
+            token = await user.getIdToken(true);
+            response = await fetch(
+                `https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+        }
+
         const data = await response.json();
         currentQuestion = data;
 
@@ -126,20 +147,14 @@ const loadQuestion = async (index) => {
 
         if (currentQuestion.type === 'multichoice') {
             renderMultichoice(currentQuestion, index);
-        }
-        else {
-            if (currentQuestion.type === 'ddwtos') {
-                renderDdwtos(currentQuestion, files);
-            } else {
-                answersDiv.innerHTML = '<p class="text-danger">Unsupported question type.</p>';
-                submitBtn.disabled = true;
-                document.getElementById('nextBtn').disabled = true;
-            }
-
+        } else if (currentQuestion.type === 'ddwtos') {
+            renderDdwtos(currentQuestion, files);
+        } else {
+            answersDiv.innerHTML = '<p class="text-danger">Unsupported question type.</p>';
+            document.getElementById('nextBtn').disabled = true;
         }
 
         document.getElementById('prevBtn').disabled = index === 0;
-        //document.getElementById('nextBtn').disabled = index === questionIds.length - 1;
 
         // Start timer only if question hasn't expired
         if (!questionStates[index]?.expired) startQuestionTimer();
@@ -161,12 +176,9 @@ function renderDdwtos(question, files) {
         } else {
             loadQuestion('Q245');
         }
-
-        //   loadNextQuestion(); // or whatever function you use to move to the next
         return;
     }
 
-    // Call the appropriate renderer for other question types
     if (question.type === 'multichoice') {
         renderMultichoice(question, files);
     } else if (question.type === 'truefalse') {
@@ -189,7 +201,7 @@ const renderMultichoice = (question, index) => {
 
     question.options.forEach((opt, i) => {
         const btn = document.createElement('button');
-        btn.className = 'btn btn-outline-dark w-100 text-start my-1';
+        btn.className = 'btn btn-outline-dark w-100 text-start my-1 option';
         btn.innerHTML = `<p>${opt.trim()}</p>`;
         btn.onclick = () => {
             btn.classList.toggle('btn-primary');
@@ -207,30 +219,27 @@ const renderMultichoice = (question, index) => {
         let selectedAnswer;
         document.getElementById('nextBtn').disabled = false;
         let correct = true;
+
         buttons.forEach((btn, i) => {
             btn.disabled = true;
             const sel = selected.has(i);
             const isCorrect = correctIndexes.includes(i);
-            buttons[i].disabled = true;
 
             if (sel && isCorrect) {
                 btn.classList.remove('btn-outline-dark', 'btn-primary');
-                buttons[i].classList.add('btn-success');
-                selectedAnswer = buttons[i].innerText;
+                btn.classList.add('btn-success');
+                selectedAnswer = btn.innerText;
             } else if (sel && !isCorrect) {
                 btn.classList.remove('btn-outline-dark', 'btn-primary');
-                buttons[i].classList.add('btn-danger');
-
+                btn.classList.add('btn-danger');
                 correct = false;
                 isCorrectAns = false;
-                selectedAnswer = buttons[i].innerText;
-
+                selectedAnswer = btn.innerText;
             } else if (!sel && isCorrect) {
-                buttons[i].classList.add('btn-warning');
-                buttons[i].classList.add('btn-success');
+                btn.classList.add('btn-warning');
+                btn.classList.add('btn-success');
                 correct = false;
                 isCorrectAns = false;
-
             }
         });
 
