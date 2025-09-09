@@ -1,5 +1,3 @@
-// practice.js
-
 // Initialize incorrectQuestions from sessionStorage if it exists
 window.incorrectQuestions = JSON.parse(sessionStorage.getItem('incorrectQuestions') || '[]');
 
@@ -31,7 +29,7 @@ let questionStartTime = null;
 const generateQuestionIds = (count) => {
     const ids = new Set();
     while (ids.size < count) {
-        const n = Math.floor(Math.random() * 61) + 1;
+        const n = Math.floor(Math.random() * 300) + 1;
         if (n === 238 || n === 277) continue; // Skip Q238 and Q277
         ids.add(`Q${n}`);
     }
@@ -102,17 +100,24 @@ const resolveImages = (html, files = []) => {
 
 // Start practice mode with a count of questions
 const startPracticeMode = (count) => {
+    // Hardcoded example question IDs for testing; replace with generateQuestionIds(count)
+    //questionIds = ['Q129', 'Q2'];
     questionIds = generateQuestionIds(count);
     currentIndex = 0;
     document.getElementById('setupScreen').style.display = 'none';
     document.getElementById('quizWrapper').style.display = 'block';
     loadQuestion(currentIndex);
+
+
 };
 
 // Load question by index
 const loadQuestion = async (index) => {
+
     document.getElementById('nextBtn').disabled = true;
     const questionId = questionIds[index];
+
+    //console.log(questionId);
 
     const quizWrapper = document.getElementById('quizWrapper');
     quizWrapper.classList.add('loading');
@@ -124,37 +129,14 @@ const loadQuestion = async (index) => {
     }
 
     try {
-        // 🔐 Get Firebase token & send it
-        const user = firebase.auth().currentUser;
-        if (!user) throw new Error('Not logged in');
-        let token = await user.getIdToken(false);
 
-        let response = await fetch(
-            `https://ited.org.ec/getQuestionDev.php?id=${encodeURIComponent(questionId)}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            }
-        );
-
-        // If token expired/invalid, refresh once
-        if (response.status === 401 || response.status === 403) {
-            token = await user.getIdToken(true);
-            response = await fetch(
-                `https://ited.org.ec/getQuestionDev.php?id=${encodeURIComponent(questionId)}`,
-                {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
-                }
-            );
-        }
-
+        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const data = await response.json();
         currentQuestion = data;
+
+        //console.log(currentQuestion);
 
         const files = Array.isArray(data.files) ? data.files : [];
         const textWithImages = resolveImages(currentQuestion.text || '', files);
@@ -245,10 +227,12 @@ const loadQuestion = async (index) => {
                     } else if (!isSelected && isCorrectAns) {
                         buttons[i].classList.add('btn-success');
                         isCorrect = false;
+
                     }
+
                 }
 
-                logAnswer({ questionId, selectedAnswer, isCorrect, currentQuestion, questionStartTime, mode: "practice" });
+                logAnswer({ questionId, selectedAnswer, isCorrect, currentQuestion, questionStartTime, mode: "practice" })
 
                 if (!isCorrect) saveIncorrectQuestion(currentQuestion);
 
@@ -259,6 +243,8 @@ const loadQuestion = async (index) => {
 
             answersDiv.appendChild(submitBtn);
 
+
+
         } else if (currentQuestion.type === 'ddwtos') {
             renderDdwtos(currentQuestion, files);
         } else {
@@ -267,15 +253,16 @@ const loadQuestion = async (index) => {
         }
 
         document.getElementById('prevBtn').disabled = index === 0;
+        //document.getElementById('nextBtn').disabled = index === questionIds.length - 1;
     } catch (err) {
         console.error('Failed to load question:', err);
         document.getElementById('questionText').textContent = 'Failed to load question.';
         document.getElementById('answersContainer').innerHTML = '';
         document.getElementById('feedback').textContent = '';
-        console.log(questionId);
     } finally {
         quizWrapper.classList.remove('loading');
     }
+
 };
 
 // Clickable images to open fullscreen modal
@@ -299,19 +286,24 @@ function enableImageZoom() {
     };
 }
 
+
+
 function renderDdwtos(question, files) {
     // Skip drag-and-drop questions for now
     if (question.type === 'ddwtos') {
-        loadQuestion(currentIndex);
+        console.warn(`Skipping drag-and-drop question: ${question.id}`);
         if (currentIndex + 1 < questionIds.length) {
             currentIndex++;
             loadQuestion(currentIndex);
         } else {
-            loadQuestion('Q5');
+            loadQuestion('Q245');
         }
+
+        //   loadNextQuestion(); // or whatever function you use to move to the next
         return;
     }
 
+    // Call the appropriate renderer for other question types
     if (question.type === 'multichoice') {
         renderMultichoice(question, files);
     } else if (question.type === 'truefalse') {
@@ -346,6 +338,101 @@ function goToNextRandomQuestion() {
     shownIndices.add(randomIndex);
     loadQuestion(currentIndex);
 }
+
+/*function renderDdwtos(question, files) {
+    const answersDiv = document.getElementById('answersContainer');
+    const feedback = document.getElementById('feedback');
+    const dropTargets = [];
+
+    // Resolve and inject images
+    let textWithImages = resolveImages(question.text || '', files);
+
+    // Replace [[n]] with drop zones
+    textWithImages = textWithImages.replace(/\[\[(\d+)\]\]/g, (match, index) => {
+        const id = `drop-${index}`;
+        dropTargets.push(id);
+        return `<span class="drop-zone border rounded px-2 py-1 mx-1" data-index="${index}" id="${id}" style="min-width: 100px; display: inline-block;">Drop here</span>`;
+    });
+
+    // Inject question text with drop zones
+    document.getElementById('questionText').innerHTML = textWithImages;
+    answersDiv.innerHTML = '';
+    feedback.textContent = '';
+
+    // Fallback: Use question.options, question.items, or question.dragbox
+    const dragItems = question.options?.length
+        ? question.options
+        : question.items?.length
+            ? question.items
+            : question.dragbox?.length
+                ? question.dragbox
+                : [];
+
+    // Render draggable answer choices
+    dragItems.forEach((option, i) => {
+        const drag = document.createElement('div');
+        drag.innerHTML = option.text || option; // allows HTML in answers
+        drag.className = 'draggable border p-2 my-1 bg-light';
+        drag.draggable = true;
+        drag.dataset.optionIndex = i;
+
+        drag.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+                text: drag.innerText.trim(), // use visible text
+                index: i
+            }));
+        });
+
+        answersDiv.appendChild(drag);
+    });
+
+    // Setup drop zones
+    dropTargets.forEach(id => {
+        const zone = document.getElementById(id);
+        zone.addEventListener('dragover', e => e.preventDefault());
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            zone.textContent = data.text;
+            zone.dataset.optionIndex = data.index;
+        });
+    });
+
+    // Add Submit button
+    const submitBtn = document.createElement('button');
+    submitBtn.textContent = 'Submit Answer';
+    submitBtn.className = 'btn btn-success mt-3 w-100';
+
+    submitBtn.onclick = () => {
+        let correct = true;
+        const userAnswers = [];
+
+        dropTargets.forEach((id, i) => {
+            const zone = document.getElementById(id);
+            const selected = parseInt(zone.dataset.optionIndex);
+            userAnswers.push(selected);
+
+            // Assumes index match is correct answer
+            if (selected !== i) correct = false;
+        });
+
+        feedback.textContent = correct ? '✅ Correct!' : '❌ Incorrect.';
+        feedback.className = correct ? 'text-success fw-bold' : 'text-danger fw-bold';
+
+        // Lock drop zones
+        dropTargets.forEach(id => {
+            const zone = document.getElementById(id);
+            zone.style.pointerEvents = 'none';
+            zone.style.opacity = 0.6;
+        });
+
+        submitBtn.disabled = true;
+    };
+
+    answersDiv.appendChild(submitBtn);
+} */
+
+
 
 // Navigation buttons
 document.getElementById('nextBtn').onclick = () => {
@@ -393,6 +480,8 @@ document.getElementById('reportBtn').onclick = async () => {
         alert("An error occurred. Please try again later.");
     }
 };
+
+
 
 // Setup buttons to select question count on window load
 window.onload = () => {

@@ -47,6 +47,7 @@ firebase.auth().onAuthStateChanged((user) => {
     } else {
         localStorage.setItem("sessionId", "session-" + Date.now());
         const userAgent = navigator.userAgent;
+        console.log(userAgent);
         localStorage.setItem("deviceInfo", userAgent);
         setupPresence(user); // now defined above
     }
