@@ -129,7 +129,7 @@ const loadQuestion = async (index) => {
         }
         else {
             if (currentQuestion.type === 'ddwtos') {
-                renderDdwtos(currentQuestion, files);
+                renderDdwtosTimed(currentQuestion, files);
             } else {
                 answersDiv.innerHTML = '<p class="text-danger">Unsupported question type.</p>';
                 submitBtn.disabled = true;
@@ -151,33 +151,160 @@ const loadQuestion = async (index) => {
     }
 };
 
-function renderDdwtos(question, files) {
-    // Skip drag-and-drop questions for now
-    if (question.type === 'ddwtos') {
-        console.warn(`Skipping drag-and-drop question: ${question.id}`);
-        if (currentIndex + 1 < questionIds.length) {
-            currentIndex++;
-            loadQuestion(currentIndex);
-        } else {
-            loadQuestion('Q245');
-        }
+function renderDdwtosTimed(question, files) {
+    const answersDiv = document.getElementById('answersContainer');
+    const feedback = document.getElementById('feedback');
+    const quizWrapper = document.getElementById('quizWrapper');
+    answersDiv.innerHTML = '';
+    feedback.textContent = '';
 
-        //   loadNextQuestion(); // or whatever function you use to move to the next
+    // 1) Render text + convert [[n]] into dropzones
+    const rawHtml = resolveImages(question.text || '', files);
+    const htmlWithZones = rawHtml.replace(/\[\[(\d+)\]\]/g, (_, grp) =>
+        `<span class="dropzone" data-group="${grp}">
+            <span class="zone-text"></span>
+            <button type="button" class="zone-clear btn btn-sm btn-light" title="Clear">×</button>
+        </span>`
+    );
+    document.getElementById('questionText').innerHTML = htmlWithZones;
+
+    const zones = Array.from(document.querySelectorAll('#questionText .dropzone'));
+    const items = question.items || question.dragboxes || question.dragbox || [];
+    const groups = question.groups || {};
+
+    if (!zones.length || !items.length) {
+        answersDiv.innerHTML = '<p class="text-danger">⚠️ No drag items or targets found for this question.</p>';
+        document.getElementById('nextBtn').disabled = false;
         return;
     }
 
-    // Call the appropriate renderer for other question types
-    if (question.type === 'multichoice') {
-        renderMultichoice(question, files);
-    } else if (question.type === 'truefalse') {
-        renderTrueFalse(question, files);
-    } else if (question.type === 'shortanswer') {
-        renderShortAnswer(question, files);
-    } else {
-        console.warn(`Unknown question type: ${question.type}`);
-        loadNextQuestion(); // optional fallback
-    }
+    // Build pool of draggable chips
+    const dragContainer = document.createElement('div');
+    dragContainer.className = 'd-flex flex-wrap mb-3';
+    answersDiv.appendChild(dragContainer);
+
+    const chipEls = {};
+    items.forEach((box, i) => {
+        const chip = document.createElement('div');
+        const label = box.label || box.text || `Option ${i + 1}`;
+        chip.textContent = label;
+        chip.className = 'btn btn-outline-secondary m-1';
+        chip.style.cursor = 'grab';
+        chip.draggable = true;
+        chip.dataset.index = i;
+        chip.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'item', index: i }));
+        });
+        chipEls[`item:${i}`] = chip;
+        dragContainer.appendChild(chip);
+    });
+
+    // Dropzone behavior
+    const clearZone = (zone) => {
+        const prev = zone.dataset.selection ? JSON.parse(zone.dataset.selection) : null;
+        if (prev && prev.kind === 'item') {
+            const key = `item:${prev.index}`;
+            if (chipEls[key]) chipEls[key].classList.remove('d-none');
+        }
+        zone.dataset.selection = '';
+        zone.classList.remove('filled', 'bg-danger', 'bg-success', 'text-white');
+        const zText = zone.querySelector('.zone-text');
+        if (zText) zText.textContent = '';
+    };
+
+    zones.forEach((zone) => {
+        const zText = zone.querySelector('.zone-text');
+        const zClear = zone.querySelector('.zone-clear');
+
+        zone.addEventListener('dragover', (e) => e.preventDefault());
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            let payload = {};
+            try {
+                payload = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+            } catch { }
+            clearZone(zone);
+
+            if (payload.kind === 'item') {
+                const idx = Number(payload.index);
+                const box = items[idx];
+                zText.textContent = box.label || box.text || `Option ${idx + 1}`;
+                zone.dataset.selection = JSON.stringify({ kind: 'item', index: idx });
+                zone.classList.add('filled');
+                const key = `item:${idx}`;
+                if (chipEls[key]) chipEls[key].classList.add('d-none');
+            }
+        });
+
+        zClear.addEventListener('click', () => clearZone(zone));
+        zone.addEventListener('dblclick', () => clearZone(zone));
+    });
+
+    // 2) Timer-based auto-submit
+    const submitAnswer = () => {
+        let isCorrect = true;
+        zones.forEach((zone) => {
+            const expectedGroup = String(zone.dataset.group);
+            const sel = zone.dataset.selection ? JSON.parse(zone.dataset.selection) : null;
+            let ok = false;
+            if (sel?.kind === 'item') {
+                const box = items[sel.index];
+                ok = box && String(box.group) === expectedGroup;
+            }
+            if (ok) {
+                zone.classList.add('bg-success', 'text-white');
+            } else {
+                zone.classList.add('bg-danger', 'text-white');
+                isCorrect = false;
+            }
+        });
+
+        try {
+            logAnswer({
+                questionId: question.id,
+                selectedAnswer: null,
+                isCorrect,
+                currentQuestion: question,
+                questionStartTime,
+                mode: 'timed',
+            });
+        } catch { }
+        if (!isCorrect) saveIncorrectQuestion(question);
+
+        feedback.textContent = isCorrect ? '✅ Correct!' : '❌ Incorrect.';
+        feedback.className = isCorrect ? 'text-success fw-bold' : 'text-danger fw-bold';
+
+        // Disable drag-and-drop
+        zones.forEach(z => {
+            z.draggable = false;
+            z.querySelector('.zone-clear').disabled = true;
+        });
+        Object.values(chipEls).forEach(c => c.draggable = false);
+
+        document.getElementById('nextBtn').disabled = false;
+        clearInterval(timerInterval);
+    };
+
+    // Start countdown
+    timeLeft = 30;
+    document.getElementById('timer').textContent = `00:${timeLeft.toString().padStart(2, '0')}`;
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+        timeLeft--;
+        document.getElementById('timer').textContent = `00:${timeLeft.toString().padStart(2, '0')}`;
+        if (timeLeft <= 0) {
+            submitAnswer();
+        }
+    }, 1000);
+
+    // Optional: Submit button for early submission
+    const submitBtn = document.createElement('button');
+    submitBtn.textContent = 'Submit Answer';
+    submitBtn.className = 'btn btn-success mt-3 w-100';
+    submitBtn.onclick = submitAnswer;
+    answersDiv.appendChild(submitBtn);
 }
+
 
 const renderMultichoice = (question, index) => {
     const answersDiv = document.getElementById('answersContainer');

@@ -1,502 +1,711 @@
-// Initialize incorrectQuestions from sessionStorage if it exists
+// practice.js  — full drop-in build
+// ------------------------------------------------------------
+// 1) Incorrect answers memory (session)
+// ------------------------------------------------------------
 window.incorrectQuestions = JSON.parse(sessionStorage.getItem('incorrectQuestions') || '[]');
 
-// Store incorrect answers in sessionStorage
 const saveIncorrectQuestion = (question) => {
-    if (!question?.id) return;
-
-    // Ensure the array exists
-    if (!Array.isArray(window.incorrectQuestions)) {
-        window.incorrectQuestions = [];
-    }
-
-    // Add the question ID if not already present
-    if (!window.incorrectQuestions.includes(question.id)) {
-        window.incorrectQuestions.push(question.id);
-
-        // Save the updated array to sessionStorage
-        sessionStorage.setItem('incorrectQuestions', JSON.stringify(window.incorrectQuestions));
-    }
+  if (!question?.id) return;
+  if (!Array.isArray(window.incorrectQuestions)) window.incorrectQuestions = [];
+  if (!window.incorrectQuestions.includes(question.id)) {
+    window.incorrectQuestions.push(question.id);
+    sessionStorage.setItem('incorrectQuestions', JSON.stringify(window.incorrectQuestions));
+  }
 };
 
+// ------------------------------------------------------------
+// 2) State
+// ------------------------------------------------------------
 let allQuestions = [];
 let currentIndex = 0;
 let questionIds = [];
 let currentQuestion = null;
 let questionStartTime = null;
 
-// Generate random unique question IDs, like "Q1", "Q45", "Q299"
-const generateQuestionIds = (count) => {
-    const ids = new Set();
-    while (ids.size < count) {
-        const n = Math.floor(Math.random() * 300) + 1;
-        if (n === 238 || n === 277) continue; // Skip Q238 and Q277
-        ids.add(`Q${n}`);
-    }
-    return Array.from(ids);
-};
+// ------------------------------------------------------------
+// 3) Helpers
+// ------------------------------------------------------------
 
-// Strip HTML to plain text for clean display or logs
-const stripHTML = (html) => {
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return div.textContent || div.innerText || '';
-};
-
-// Normalize filename to match ignoring accents, spaces, underscores, case
-const normalizeFilename = (name) =>
-    name
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '') // Remove accents
-        .replace(/\s+/g, '') // Remove spaces
-        .replace(/_/g, ''); // Remove underscores (optional)
-
-// Replace pluginfile references in HTML with base64 images from files array
-const resolveImages = (html, files = []) => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    const images = doc.querySelectorAll('img');
-
-    const normalizedFiles = files.map(f => ({
-        ...f,
-        normalizedName: normalizeFilename(f.name)
-    }));
-
-    images.forEach(img => {
-        const src = img.getAttribute('src');
-        if (!src || !src.includes('@@PLUGINFILE@@')) return;
-
-        const encodedFilename = src.split('/').pop();
-        const decodedFilename = decodeURIComponent(encodedFilename);
-        const normalizedSrcName = normalizeFilename(decodedFilename);
-
-        const fileObj = normalizedFiles.find(f => f.normalizedName === normalizedSrcName);
-
-        if (fileObj && fileObj.base64) {
-            const fullSrc = `data:image/png;base64,${fileObj.base64}`;
-            img.setAttribute('src', fullSrc);
-            img.style.maxWidth = '100%';
-            img.style.height = 'auto';
-            img.style.display = 'block';
-            img.style.margin = '0.5rem auto';
-            img.style.cursor = 'zoom-in';
-
-            img.addEventListener('click', () => {
-                const modal = document.getElementById('imageModal');
-                const modalImage = document.getElementById('modalImage');
-                modalImage.src = fullSrc;
-                modal.style.display = 'flex';
-            });
-        } else {
-            console.warn(`[resolveImages] No match found for image: ${decodedFilename}`);
-            console.log('Files available:', files.map(f => f.name));
-        }
-    });
-
-    return doc.body.innerHTML;
-};
-
-
-// Start practice mode with a count of questions
-const startPracticeMode = (count) => {
-    // Hardcoded example question IDs for testing; replace with generateQuestionIds(count)
-    //questionIds = ['Q129', 'Q2'];
-    questionIds = generateQuestionIds(count);
-    currentIndex = 0;
-    document.getElementById('setupScreen').style.display = 'none';
-    document.getElementById('quizWrapper').style.display = 'block';
-    loadQuestion(currentIndex);
-
-
-};
-
-// Load question by index
-const loadQuestion = async (index) => {
-
-    document.getElementById('nextBtn').disabled = true;
-    const questionId = questionIds[index];
-
-    //console.log(questionId);
-
-    const quizWrapper = document.getElementById('quizWrapper');
-    quizWrapper.classList.add('loading');
-
-    if (!questionId) {
-        console.error(`No question ID found at index ${index}`);
-        overlay.style.display = 'none'; // HIDE blur if error
-        return;
-    }
-
+// Strong Fisher–Yates shuffle
+const shuffleArray = (arr) => {
+  // use crypto if available
+  const rand = (maxExclusive) => {
     try {
-
-        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-        const data = await response.json();
-        currentQuestion = data;
-
-        //console.log(currentQuestion);
-
-        const files = Array.isArray(data.files) ? data.files : [];
-        const textWithImages = resolveImages(currentQuestion.text || '', files);
-
-        document.getElementById('questionNumber').textContent = `Question ${index + 1} of ${questionIds.length}`;
-        document.getElementById('questionText').innerHTML = textWithImages;
-
-        enableImageZoom();
-        questionStartTime = Date.now();
-
-        const answersDiv = document.getElementById('answersContainer');
-        const feedback = document.getElementById('feedback');
-        answersDiv.innerHTML = '';
-        feedback.textContent = '';
-        feedback.className = '';
-
-        if (currentQuestion.type === 'multichoice') {
-            const selectedIndexes = new Set();
-            // Support both single or multiple correct indexes
-            const correctIndexes = Array.isArray(currentQuestion.correctIndexes)
-                ? currentQuestion.correctIndexes
-                : [currentQuestion.correctIndex];
-            const buttons = [];
-
-            currentQuestion.options.forEach((option, i) => {
-                const btn = document.createElement('button');
-                btn.className = 'btn btn-outline-dark w-100 text-start my-1';
-
-                let cleaned = option
-                    .replace(/[“”]/g, '"')
-                    .replace(/<\/?p>/gi, '')
-                    .replace(/<br\s*\/?>/gi, '')
-                    .trim();
-
-                if (/^\{.*\}$/.test(cleaned)) {
-                    try {
-                        const json = JSON.parse(cleaned);
-                        cleaned = `<pre>${JSON.stringify(json, null, 2)}</pre>`;
-                    } catch {
-                        cleaned = `<code>${cleaned}</code>`;
-                    }
-                } else {
-                    cleaned = `<p>${cleaned}</p>`;
-                }
-
-                btn.innerHTML = cleaned;
-                btn.onclick = () => {
-                    if (btn.classList.contains('btn-primary')) {
-                        btn.classList.remove('btn-primary');
-                        selectedIndexes.delete(i);
-                    } else {
-                        btn.classList.add('btn-primary');
-                        selectedIndexes.add(i);
-                    }
-                };
-
-                buttons.push(btn);
-                answersDiv.appendChild(btn);
-            });
-
-            // Submit button
-            const submitBtn = document.createElement('button');
-            submitBtn.textContent = 'Submit Answer';
-            submitBtn.className = 'btn btn-success mt-3 w-100';
-
-            submitBtn.onclick = () => {
-                let isCorrect = true;
-                document.getElementById('nextBtn').disabled = false;
-
-                let selectedAnswer;
-                let isCorrectAnsLog;
-
-                for (let i = 0; i < buttons.length; i++) {
-                    const isSelected = selectedIndexes.has(i);
-                    const isCorrectAns = correctIndexes.includes(i);
-                    buttons[i].disabled = true;
-
-                    if (isSelected && isCorrectAns) {
-                        buttons[i].classList.remove('btn-outline-dark', 'btn-primary');
-                        buttons[i].classList.add('btn-success');
-                        selectedAnswer = buttons[i].innerText;
-                        isCorrectAnsLog = true;
-                    } else if (isSelected && !isCorrectAns) {
-                        buttons[i].classList.remove('btn-outline-dark', 'btn-primary');
-                        buttons[i].classList.add('btn-danger');
-                        isCorrect = false;
-                        selectedAnswer = buttons[i].innerText;
-                    } else if (!isSelected && isCorrectAns) {
-                        buttons[i].classList.add('btn-success');
-                        isCorrect = false;
-
-                    }
-
-                }
-
-                logAnswer({ questionId, selectedAnswer, isCorrect, currentQuestion, questionStartTime, mode: "practice" })
-
-                if (!isCorrect) saveIncorrectQuestion(currentQuestion);
-
-                feedback.textContent = isCorrect ? '✅ Correct!' : '❌ Incorrect.';
-                feedback.className = isCorrect ? 'text-success fw-bold' : 'text-danger fw-bold';
-                submitBtn.disabled = true;
-            };
-
-            answersDiv.appendChild(submitBtn);
-
-
-
-        } else if (currentQuestion.type === 'ddwtos') {
-            renderDdwtos(currentQuestion, files);
-        } else {
-            answersDiv.innerHTML = '<p class="text-danger">Unsupported question type.</p>';
-            submitBtn.disabled = true;
-        }
-
-        document.getElementById('prevBtn').disabled = index === 0;
-        //document.getElementById('nextBtn').disabled = index === questionIds.length - 1;
-    } catch (err) {
-        console.error('Failed to load question:', err);
-        document.getElementById('questionText').textContent = 'Failed to load question.';
-        document.getElementById('answersContainer').innerHTML = '';
-        document.getElementById('feedback').textContent = '';
-    } finally {
-        quizWrapper.classList.remove('loading');
+      const u32 = new Uint32Array(1);
+      crypto.getRandomValues(u32);
+      return Math.floor((u32[0] / 2 ** 32) * maxExclusive);
+    } catch {
+      return Math.floor(Math.random() * maxExclusive);
     }
-
+  };
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 };
 
-// Clickable images to open fullscreen modal
-function enableImageZoom() {
-    const images = document.querySelectorAll('#questionText img');
+// Build Q1..Qn
+const rangeIds = (n) => Array.from({ length: n }, (_, i) => `Q${i + 1}`);
 
-    images.forEach(img => {
-        img.style.cursor = 'zoom-in';
-        img.onclick = () => {
-            const modal = document.getElementById('imageModal');
-            const modalImg = document.getElementById('modalImage');
-            modalImg.src = img.src;
-            modal.style.display = 'flex';
-        };
+// Any IDs to exclude always
+const EXCLUDE_IDS = new Set(['Q238', 'Q277']);
+
+// If you can inject an exact list from server, set window.AVAILABLE_IDS before this file.
+// Fallback to Q1..Q300.
+const getIdPool = () => {
+  if (Array.isArray(window.AVAILABLE_IDS) && window.AVAILABLE_IDS.length) {
+    return window.AVAILABLE_IDS.filter((id) => !EXCLUDE_IDS.has(id));
+  }
+  return rangeIds(300).filter((id) => !EXCLUDE_IDS.has(id));
+};
+
+// Strip HTML down to readable text
+const stripHTML = (html) => {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || div.innerText || '';
+};
+
+// Normalize filenames (diacritics/space/underscore-insensitive)
+const normalizeFilename = (name) =>
+  String(name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/_/g, '');
+
+// Expand pluginfile images to base64
+const resolveImages = (html, files = []) => {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html || '', 'text/html');
+  const images = doc.querySelectorAll('img');
+
+  const normalizedFiles = files.map((f) => ({
+    ...f,
+    normalizedName: normalizeFilename(f.name),
+  }));
+
+  images.forEach((img) => {
+    const src = img.getAttribute('src');
+    if (!src || !src.includes('@@PLUGINFILE@@')) return;
+
+    const encodedFilename = src.split('/').pop();
+    const decodedFilename = decodeURIComponent(encodedFilename || '');
+    const normalizedSrcName = normalizeFilename(decodedFilename);
+
+    const fileObj = normalizedFiles.find((f) => f.normalizedName === normalizedSrcName);
+
+    if (fileObj?.base64) {
+      const fullSrc = `data:image/png;base64,${fileObj.base64}`;
+      img.setAttribute('src', fullSrc);
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.display = 'block';
+      img.style.margin = '0.5rem auto';
+      img.style.cursor = 'zoom-in';
+      img.addEventListener('click', () => {
+        const modal = document.getElementById('imageModal');
+        const modalImage = document.getElementById('modalImage');
+        modalImage.src = fullSrc;
+        modal.style.display = 'flex';
+      });
+    } else {
+      console.warn('[resolveImages] No match for', decodedFilename);
+    }
+  });
+
+  return doc.body.innerHTML;
+};
+
+// ------------------------------------------------------------
+// 4) Question selection (shuffled & no immediate repeats)
+// ------------------------------------------------------------
+const generateQuestionIds = (count) => {
+  const pool = getIdPool();
+  if (!pool.length) return [];
+
+  const recent = JSON.parse(sessionStorage.getItem('recentQuestionIds') || '[]');
+  const fresh = pool.filter((id) => !recent.includes(id));
+  const source = fresh.length >= count ? fresh : pool.slice();
+
+  shuffleArray(source);
+  const picked = source.slice(0, count);
+
+  sessionStorage.setItem('recentQuestionIds', JSON.stringify(picked));
+  return picked;
+};
+
+// ------------------------------------------------------------
+// 5) Practice flow
+// ------------------------------------------------------------
+const startPracticeMode = (count) => {
+  questionIds = generateQuestionIds(count);
+  currentIndex = 0;
+  document.getElementById('setupScreen').style.display = 'none';
+  document.getElementById('quizWrapper').style.display = 'block';
+  loadQuestion(currentIndex);
+};
+
+const loadQuestion = async (index) => {
+  document.getElementById('nextBtn').disabled = true;
+  const questionId = questionIds[index];
+  const quizWrapper = document.getElementById('quizWrapper');
+  quizWrapper.classList.add('loading');
+
+  try {
+    // --- Get Firebase token if user is logged in ---
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('Not logged in');
+    const token = await user.getIdToken(false);
+
+    // --- Fetch the question ---
+    const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
 
-    // Close modal on click anywhere
-    document.getElementById('imageModal').onclick = () => {
-        document.getElementById('imageModal').style.display = 'none';
-        document.getElementById('modalImage').src = '';
-    };
-}
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
+    const data = await response.json();
+    currentQuestion = data;
 
+    // --- Resolve images ---
+    const files = Array.isArray(data.files) ? data.files : [];
+    const textWithImages = resolveImages(currentQuestion.text || '', files);
 
-function renderDdwtos(question, files) {
-    // Skip drag-and-drop questions for now
-    if (question.type === 'ddwtos') {
-        console.warn(`Skipping drag-and-drop question: ${question.id}`);
-        if (currentIndex + 1 < questionIds.length) {
-            currentIndex++;
-            loadQuestion(currentIndex);
-        } else {
-            loadQuestion('Q245');
-        }
+    document.getElementById('questionNumber').textContent = `Question ${index + 1} of ${questionIds.length}`;
+    document.getElementById('questionText').innerHTML = textWithImages;
+    enableImageZoom();
+    questionStartTime = Date.now();
 
-        //   loadNextQuestion(); // or whatever function you use to move to the next
-        return;
-    }
-
-    // Call the appropriate renderer for other question types
-    if (question.type === 'multichoice') {
-        renderMultichoice(question, files);
-    } else if (question.type === 'truefalse') {
-        renderTrueFalse(question, files);
-    } else if (question.type === 'shortanswer') {
-        renderShortAnswer(question, files);
-    } else {
-        console.warn(`Unknown question type: ${question.type}`);
-        loadNextQuestion(); // optional fallback
-    }
-}
-
-function goToNextRandomQuestion() {
-    let attempts = 0;
-    const maxAttempts = questionIds.length;
-
-    while (attempts < maxAttempts) {
-        const randomIndex = Math.floor(Math.random() * questionIds.length);
-        if (!shownIndices.has(randomIndex)) {
-            currentIndex = randomIndex;
-            shownIndices.add(randomIndex);
-            loadQuestion(currentIndex);
-            return;
-        }
-        attempts++;
-    }
-
-    // If all questions have been shown, reset and pick any random question again
-    shownIndices.clear();
-    const randomIndex = Math.floor(Math.random() * questionIds.length);
-    currentIndex = randomIndex;
-    shownIndices.add(randomIndex);
-    loadQuestion(currentIndex);
-}
-
-/*function renderDdwtos(question, files) {
+    // --- Clear previous answers and feedback ---
     const answersDiv = document.getElementById('answersContainer');
     const feedback = document.getElementById('feedback');
-    const dropTargets = [];
-
-    // Resolve and inject images
-    let textWithImages = resolveImages(question.text || '', files);
-
-    // Replace [[n]] with drop zones
-    textWithImages = textWithImages.replace(/\[\[(\d+)\]\]/g, (match, index) => {
-        const id = `drop-${index}`;
-        dropTargets.push(id);
-        return `<span class="drop-zone border rounded px-2 py-1 mx-1" data-index="${index}" id="${id}" style="min-width: 100px; display: inline-block;">Drop here</span>`;
-    });
-
-    // Inject question text with drop zones
-    document.getElementById('questionText').innerHTML = textWithImages;
     answersDiv.innerHTML = '';
     feedback.textContent = '';
+    feedback.className = '';
 
-    // Fallback: Use question.options, question.items, or question.dragbox
-    const dragItems = question.options?.length
-        ? question.options
-        : question.items?.length
-            ? question.items
-            : question.dragbox?.length
-                ? question.dragbox
-                : [];
+    // --- Render by type ---
+    switch (currentQuestion.type) {
+      case 'multichoice':
+      case 'truefalse':
+        renderMultichoice(currentQuestion, files);
+        break;
+      case 'matching':
+        renderMatching(currentQuestion, files);
+        break;
+      case 'ddwtos':
+        renderDdwtos(currentQuestion, files);
+        break;
+      default:
+        answersDiv.innerHTML = '<p class="text-danger">Unsupported question type.</p>';
+        document.getElementById('nextBtn').disabled = false;
+    }
 
-    // Render draggable answer choices
-    dragItems.forEach((option, i) => {
-        const drag = document.createElement('div');
-        drag.innerHTML = option.text || option; // allows HTML in answers
-        drag.className = 'draggable border p-2 my-1 bg-light';
-        drag.draggable = true;
-        drag.dataset.optionIndex = i;
+    document.getElementById('prevBtn').disabled = index === 0;
+  } catch (err) {
+    console.error('Failed to load question:', err);
+    document.getElementById('questionText').textContent = 'Failed to load question.';
+    document.getElementById('answersContainer').innerHTML = '';
+    document.getElementById('feedback').textContent = '';
+  } finally {
+    quizWrapper.classList.remove('loading');
+  }
+};
 
-        drag.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('text/plain', JSON.stringify({
-                text: drag.innerText.trim(), // use visible text
-                index: i
-            }));
-        });
+// ------------------------------------------------------------
+// 6) Renderers
+// ------------------------------------------------------------
 
-        answersDiv.appendChild(drag);
-    });
+// MCQ (and True/False)
+function renderMultichoice(question, files) {
+  const answersDiv = document.getElementById('answersContainer');
+  const feedback = document.getElementById('feedback');
 
-    // Setup drop zones
-    dropTargets.forEach(id => {
-        const zone = document.getElementById(id);
-        zone.addEventListener('dragover', e => e.preventDefault());
-        zone.addEventListener('drop', e => {
-            e.preventDefault();
-            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-            zone.textContent = data.text;
-            zone.dataset.optionIndex = data.index;
-        });
-    });
+  const selectedIndexes = new Set();
+  const correctIndexes = Array.isArray(question.correctIndexes)
+    ? question.correctIndexes
+    : [question.correctIndex];
 
-    // Add Submit button
-    const submitBtn = document.createElement('button');
-    submitBtn.textContent = 'Submit Answer';
-    submitBtn.className = 'btn btn-success mt-3 w-100';
+  const options = Array.isArray(question.options) ? question.options.slice() : [];
+  // Shuffle display order (so the first option isn’t always the right one)
+  shuffleArray(options);
 
-    submitBtn.onclick = () => {
-        let correct = true;
-        const userAnswers = [];
+  const buttons = [];
 
-        dropTargets.forEach((id, i) => {
-            const zone = document.getElementById(id);
-            const selected = parseInt(zone.dataset.optionIndex);
-            userAnswers.push(selected);
+  options.forEach((option, renderedIdx) => {
+    // We need to map back to original index to compare correctness
+    const originalIdx = question.options.indexOf(option);
 
-            // Assumes index match is correct answer
-            if (selected !== i) correct = false;
-        });
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-outline-dark w-100 text-start my-1';
 
-        feedback.textContent = correct ? '✅ Correct!' : '❌ Incorrect.';
-        feedback.className = correct ? 'text-success fw-bold' : 'text-danger fw-bold';
+    let cleaned = String(option)
+      .replace(/[“”]/g, '"')
+      .replace(/<\/?p>/gi, '')
+      .replace(/<br\s*\/?>/gi, '')
+      .trim();
 
-        // Lock drop zones
-        dropTargets.forEach(id => {
-            const zone = document.getElementById(id);
-            zone.style.pointerEvents = 'none';
-            zone.style.opacity = 0.6;
-        });
+    if (/^\{.*\}$/.test(cleaned)) {
+      try {
+        const json = JSON.parse(cleaned);
+        cleaned = `<pre>${JSON.stringify(json, null, 2)}</pre>`;
+      } catch {
+        cleaned = `<code>${cleaned}</code>`;
+      }
+    } else {
+      cleaned = `<p>${cleaned}</p>`;
+    }
 
-        submitBtn.disabled = true;
+    btn.innerHTML = cleaned;
+    btn.onclick = () => {
+      if (btn.classList.contains('btn-primary')) {
+        btn.classList.remove('btn-primary');
+        selectedIndexes.delete(originalIdx);
+      } else {
+        btn.classList.add('btn-primary');
+        selectedIndexes.add(originalIdx);
+      }
     };
 
-    answersDiv.appendChild(submitBtn);
-} */
+    buttons.push(btn);
+    answersDiv.appendChild(btn);
+  });
 
+  const submitBtn = document.createElement('button');
+  submitBtn.textContent = 'Submit Answer';
+  submitBtn.className = 'btn btn-success mt-3 w-100';
+  submitBtn.onclick = () => {
+    let isCorrect = true;
+    let selectedAnswer;
 
+    buttons.forEach((btn) => {
+      // Translate rendered option text back to original index
+      const pureText = stripHTML(btn.innerHTML);
+      const originalIdx = question.options.findIndex((o) => stripHTML(o) === pureText);
 
-// Navigation buttons
-document.getElementById('nextBtn').onclick = () => {
-    if (currentIndex < questionIds.length - 1) {
-        currentIndex++;
-        loadQuestion(currentIndex);
+      const isSelected = selectedIndexes.has(originalIdx);
+      const isCorrectAns = correctIndexes.includes(originalIdx);
+      btn.disabled = true;
+
+      if (isSelected && isCorrectAns) {
+        btn.classList.remove('btn-outline-dark', 'btn-primary');
+        btn.classList.add('btn-success');
+        selectedAnswer = pureText;
+      } else if (isSelected && !isCorrectAns) {
+        btn.classList.remove('btn-outline-dark', 'btn-primary');
+        btn.classList.add('btn-danger');
+        selectedAnswer = pureText;
+        isCorrect = false;
+      } else if (!isSelected && isCorrectAns) {
+        btn.classList.add('btn-success');
+        isCorrect = false;
+      }
+    });
+
+    // logAnswer assumed to exist in your logger.js
+    try {
+      logAnswer({
+        questionId: question.id,
+        selectedAnswer,
+        isCorrect,
+        currentQuestion: question,
+        questionStartTime,
+        mode: 'practice',
+      });
+    } catch (e) {
+      // no-op if logger not present
     }
+
+    if (!isCorrect) saveIncorrectQuestion(question);
+    feedback.textContent = isCorrect ? '✅ Correct!' : '❌ Incorrect.';
+    feedback.className = isCorrect ? 'text-success fw-bold' : 'text-danger fw-bold';
+    submitBtn.disabled = true;
+    document.getElementById('nextBtn').disabled = false;
+  };
+
+  answersDiv.appendChild(submitBtn);
+}
+
+// Simple “matching” as dropdowns (kept from your version)
+function renderMatching(question, files) {
+  const answersDiv = document.getElementById('answersContainer');
+  const feedback = document.getElementById('feedback');
+  answersDiv.innerHTML = '';
+  feedback.textContent = '';
+
+  const pairs = question.subquestions || question.matching;
+  if (!pairs) {
+    answersDiv.innerHTML = '<p class="text-danger">No matching data found.</p>';
+    document.getElementById('nextBtn').disabled = false;
+    return;
+  }
+
+  const allAnswers = pairs.map((p) => stripHTML(p.answer));
+  const shuffled = shuffleArray(allAnswers.slice());
+
+  pairs.forEach((pair) => {
+    const row = document.createElement('div');
+    row.className = 'mb-2';
+
+    const label = document.createElement('label');
+    label.innerHTML = stripHTML(pair.text);
+    label.className = 'me-2';
+
+    const select = document.createElement('select');
+    select.className = 'form-select d-inline-block w-auto';
+    select.dataset.correctAnswer = stripHTML(pair.answer);
+
+    shuffled.forEach((ans) => {
+      const opt = document.createElement('option');
+      opt.value = ans;
+      opt.textContent = ans;
+      select.appendChild(opt);
+    });
+
+    row.appendChild(label);
+    row.appendChild(select);
+    answersDiv.appendChild(row);
+  });
+
+  const submitBtn = document.createElement('button');
+  submitBtn.textContent = 'Submit Answer';
+  submitBtn.className = 'btn btn-success mt-3 w-100';
+  submitBtn.onclick = () => {
+    let isCorrect = true;
+    const selects = answersDiv.querySelectorAll('select');
+    selects.forEach((select) => {
+      const userAns = select.value;
+      const correctAns = select.dataset.correctAnswer;
+      if (userAns === correctAns) {
+        select.classList.add('is-valid');
+      } else {
+        select.classList.add('is-invalid');
+        isCorrect = false;
+      }
+      select.disabled = true;
+    });
+
+    try {
+      logAnswer({ questionId: question.id, selectedAnswer: null, isCorrect, currentQuestion: question, questionStartTime, mode: 'practice' });
+    } catch { }
+    if (!isCorrect) saveIncorrectQuestion(question);
+    feedback.textContent = isCorrect ? '✅ Correct!' : '❌ Incorrect.';
+    feedback.className = isCorrect ? 'text-success fw-bold' : 'text-danger fw-bold';
+    submitBtn.disabled = true;
+    document.getElementById('nextBtn').disabled = false;
+  };
+
+  answersDiv.appendChild(submitBtn);
+}
+
+// DDWTOS (Drag-and-drop onto text)
+function renderDdwtos(question, files) {
+  const answersDiv = document.getElementById('answersContainer');
+  const feedback = document.getElementById('feedback');
+  answersDiv.innerHTML = '';
+  feedback.textContent = '';
+
+  // 1) Render text + convert [[n]] into dropzones with clear button
+  const rawHtml = resolveImages(question.text || '', files);
+  const htmlWithZones = rawHtml.replace(/\[\[(\d+)\]\]/g, (_, grp) =>
+    `<span class="dropzone" data-group="${grp}">
+       <span class="zone-text"></span>
+       <button type="button" class="zone-clear btn btn-sm btn-light" title="Clear">×</button>
+     </span>`
+  );
+  document.getElementById('questionText').innerHTML = htmlWithZones;
+  enableImageZoom();
+
+  const zones = Array.from(document.querySelectorAll('#questionText .dropzone'));
+
+  const items = question.items || question.dragboxes || question.dragbox || [];
+  const groups = question.groups || {};
+
+  if (!zones.length || !items.length) {
+    answersDiv.innerHTML = '<p class="text-danger">⚠️ No drag items or targets found for this question.</p>';
+    document.getElementById('nextBtn').disabled = false;
+    return;
+  }
+
+  // Count zones per group in the stem (useful hint)
+  const zoneCountsByGroup = zones.reduce((acc, z) => {
+    const g = z.dataset.group;
+    acc[g] = (acc[g] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Heuristics for display mode
+  const hasInfiniteItem = items.some((it) => it?.infinite === true || it?.infinite === 1 || it?.infinite === '1');
+  const clean = (s) => stripHTML(String(s || '')).trim();
+  const isGenericGroup = (s) => /^group\s*\d+$/i.test(clean(s));
+
+  const meaningfulGroupIds = Object.keys(groups).filter((g) => {
+    const glabel = groups[g];
+    return glabel && !isGenericGroup(glabel);
+  });
+
+  const groupMode = hasInfiniteItem || meaningfulGroupIds.length > 0;
+
+  // Label helpers
+  const pickField = (obj, fields) => {
+    for (const f of fields) {
+      const v = obj && typeof obj[f] === 'string' ? obj[f].trim() : '';
+      if (v) return v;
+    }
+    return '';
+  };
+
+  const questionPlain = clean(rawHtml).toLowerCase();
+
+  const itemLabel = (box, i) => {
+    const raw = pickField(box, ['label', 'shortlabel', 'name', 'title', 'text', 'value']);
+    let t = clean(raw);
+    if (!t) return `Option ${i + 1}`;
+    const lower = t.toLowerCase();
+    const words = t.split(/\s+/);
+    const appears = questionPlain.includes(lower);
+    const tooLong = words.length > 12 || t.length > 100;
+    if (appears || tooLong) {
+      const snippet = words.slice(0, 8).join(' ');
+      return words.length > 8 ? `${snippet}…` : snippet;
+    }
+    return t;
+  };
+
+  const groupLabel = (groupId) => {
+    const glabel = groups[groupId];
+    if (glabel && !isGenericGroup(glabel)) return clean(glabel);
+    const rep = items
+      .filter((it) => String(it.group) === String(groupId))
+      .map((it, idx) => itemLabel(it, idx))
+      .sort((a, b) => a.length - b.length)[0];
+    return rep || `Option ${groupId}`;
+  };
+
+  // 3) Build the pool row
+  const dragContainer = document.createElement('div');
+  dragContainer.className = 'd-flex flex-wrap mb-3';
+  answersDiv.appendChild(dragContainer);
+
+  const chipEls = {};
+  if (groupMode) {
+    const uniqueGroups = Object.keys(zoneCountsByGroup);
+    shuffleArray(uniqueGroups).forEach((gid) => {
+      const chip = document.createElement('div');
+      chip.textContent = groupLabel(gid);
+      chip.className = 'btn btn-outline-secondary m-1';
+      chip.style.cursor = 'grab';
+      chip.draggable = true;
+      chip.dataset.kind = 'group';
+      chip.dataset.group = gid;
+      chip.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'group', group: gid }));
+      });
+      chipEls[`group:${gid}`] = chip;
+      dragContainer.appendChild(chip);
+    });
+  } else {
+    // item-mode chips are one-time use
+    const shuffled = shuffleArray(items.slice());
+    shuffled.forEach((box, i) => {
+      const originalIdx = items.indexOf(box);
+      const chip = document.createElement('div');
+      chip.textContent = itemLabel(box, originalIdx);
+      chip.className = 'btn btn-outline-secondary m-1';
+      chip.style.cursor = 'grab';
+      chip.draggable = true;
+      chip.dataset.kind = 'item';
+      chip.dataset.index = String(originalIdx);
+      chip.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'item', index: originalIdx }));
+      });
+      chipEls[`item:${originalIdx}`] = chip;
+      dragContainer.appendChild(chip);
+    });
+  }
+
+  // 4) Zones (drop + clear)
+  const clearZone = (zone) => {
+    const prev = zone.dataset.selection ? JSON.parse(zone.dataset.selection) : null;
+    if (prev && prev.kind === 'item') {
+      const key = `item:${prev.index}`;
+      if (chipEls[key]) chipEls[key].classList.remove('d-none');
+    }
+    zone.dataset.selection = '';
+    zone.classList.remove('filled', 'bg-danger', 'bg-success', 'text-white');
+    const zText = zone.querySelector('.zone-text');
+    if (zText) zText.textContent = '';
+  };
+
+  zones.forEach((zone) => {
+    const zText = zone.querySelector('.zone-text');
+    const zClear = zone.querySelector('.zone-clear');
+
+    zone.addEventListener('dragover', (e) => e.preventDefault());
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      let payload = {};
+      try {
+        payload = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+      } catch { }
+
+      const prev = zone.dataset.selection ? JSON.parse(zone.dataset.selection) : null;
+      if (prev && prev.kind === 'item') {
+        const key = `item:${prev.index}`;
+        if (chipEls[key]) chipEls[key].classList.remove('d-none');
+      }
+
+      if (payload.kind === 'group') {
+        zText.textContent = groupLabel(payload.group);
+        zone.dataset.selection = JSON.stringify({ kind: 'group', group: String(payload.group) });
+        zone.classList.add('filled');
+      } else if (payload.kind === 'item') {
+        const idx = Number(payload.index);
+        const box = items[idx];
+        zText.textContent = itemLabel(box, idx);
+        zone.dataset.selection = JSON.stringify({ kind: 'item', index: idx });
+        zone.classList.add('filled');
+        const key = `item:${idx}`;
+        if (chipEls[key]) chipEls[key].classList.add('d-none');
+      }
+      zone.classList.remove('bg-danger', 'bg-success', 'text-white');
+    });
+
+    zClear.addEventListener('click', () => clearZone(zone));
+    zone.addEventListener('dblclick', () => clearZone(zone));
+  });
+
+  // 5) Submit
+  const submitBtn = document.createElement('button');
+  submitBtn.textContent = 'Submit Answer';
+  submitBtn.className = 'btn btn-success mt-3 w-100';
+  submitBtn.onclick = () => {
+    let isCorrect = true;
+
+    zones.forEach((zone) => {
+      const expectedGroup = String(zone.dataset.group);
+      const sel = zone.dataset.selection ? JSON.parse(zone.dataset.selection) : null;
+
+      let ok = false;
+      if (sel?.kind === 'group') {
+        ok = String(sel.group) === expectedGroup;
+      } else if (sel?.kind === 'item') {
+        const box = items[sel.index];
+        ok = box && String(box.group) === expectedGroup;
+      }
+
+      if (ok) {
+        zone.classList.add('bg-success', 'text-white');
+      } else {
+        zone.classList.add('bg-danger', 'text-white');
+        isCorrect = false;
+      }
+    });
+
+    try {
+      logAnswer({
+        questionId: question.id,
+        selectedAnswer: null,
+        isCorrect,
+        currentQuestion: question,
+        questionStartTime,
+        mode: 'practice',
+      });
+    } catch { }
+    if (!isCorrect) saveIncorrectQuestion(question);
+
+    feedback.textContent = isCorrect ? '✅ Correct!' : '❌ Incorrect.';
+    feedback.className = isCorrect ? 'text-success fw-bold' : 'text-danger fw-bold';
+    submitBtn.disabled = true;
+    document.getElementById('nextBtn').disabled = false;
+  };
+
+  answersDiv.appendChild(submitBtn);
+}
+
+// ------------------------------------------------------------
+// 7) Image zoom
+// ------------------------------------------------------------
+function enableImageZoom() {
+  const images = document.querySelectorAll('#questionText img');
+  images.forEach((img) => {
+    img.style.cursor = 'zoom-in';
+    img.onclick = () => {
+      const modal = document.getElementById('imageModal');
+      const modalImg = document.getElementById('modalImage');
+      modalImg.src = img.src;
+      modal.style.display = 'flex';
+    };
+  });
+  document.getElementById('imageModal').onclick = () => {
+    document.getElementById('imageModal').style.display = 'none';
+    document.getElementById('modalImage').src = '';
+  };
+}
+
+// ------------------------------------------------------------
+// 8) Nav + report
+// ------------------------------------------------------------
+document.getElementById('nextBtn').onclick = () => {
+  if (currentIndex < questionIds.length - 1) {
+    currentIndex++;
+    loadQuestion(currentIndex);
+  }
 };
 
 document.getElementById('prevBtn').onclick = () => {
-    if (currentIndex > 0) {
-        currentIndex--;
-        loadQuestion(currentIndex);
-    }
+  if (currentIndex > 0) {
+    currentIndex--;
+    loadQuestion(currentIndex);
+  }
 };
 
 document.getElementById('reportBtn').onclick = async () => {
-    const reason = prompt("Why are you reporting this question? (e.g. incorrect answer, image missing, etc)");
-
-    if (!reason || reason.trim() === '') {
-        alert("Report cancelled. Reason is required.");
-        return;
-    }
-
-    const user = firebase.auth().currentUser;
-    if (!user) {
-        alert("You must be logged in to report questions.");
-        return;
-    }
-
-    const reportData = {
-        questionId: currentQuestion.id,
-        userId: user.uid,
-        userEmail: user.email || '',
-        reason: reason.trim(),
-        timestamp: Date.now()
-    };
-
-    try {
-        const db = firebase.database();
-        await db.ref('questionReports').push(reportData);
-        alert("Thank you! Your report has been submitted.");
-    } catch (err) {
-        console.error("Failed to submit report:", err);
-        alert("An error occurred. Please try again later.");
-    }
+  const reason = prompt('Why are you reporting this question? (e.g. incorrect answer, image missing, etc)');
+  if (!reason || !reason.trim()) {
+    alert('Report cancelled. Reason is required.');
+    return;
+  }
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('You must be logged in to report questions.');
+    return;
+  }
+  const reportData = {
+    questionId: currentQuestion?.id,
+    userId: user.uid,
+    userEmail: user.email || '',
+    reason: reason.trim(),
+    timestamp: Date.now(),
+  };
+  try {
+    const db = firebase.database();
+    await db.ref('questionReports').push(reportData);
+    alert('Thank you! Your report has been submitted.');
+  } catch (err) {
+    console.error('Failed to submit report:', err);
+    alert('An error occurred. Please try again later.');
+  }
 };
 
-
-
-// Setup buttons to select question count on window load
+// ------------------------------------------------------------
+// 9) Boot
+// ------------------------------------------------------------
 window.onload = () => {
-    const btnContainer = document.getElementById('questionCountButtons');
-    document.getElementById('nextBtn').disabled = true;
+  const btnContainer = document.getElementById('questionCountButtons');
+  document.getElementById('nextBtn').disabled = true;
 
-    [5, 10, 15, 20, 30, 50, 70, 100, 150, 250].forEach(count => {
-        const btn = document.createElement('button');
-        btn.textContent = count;
-        btn.className = 'btn btn-outline-primary';
-        btn.onclick = () => startPracticeMode(count);
-        btnContainer.appendChild(btn);
-    });
+  [5, 10, 15, 20, 30, 50, 70, 100, 150, 250].forEach((count) => {
+    const btn = document.createElement('button');
+    btn.textContent = count;
+    btn.className = 'btn btn-outline-primary m-1';
+    btn.onclick = () => startPracticeMode(count);
+    btnContainer.appendChild(btn);
+  });
 
-    document.getElementById('imageModal').addEventListener('click', () => {
-        document.getElementById('imageModal').style.display = 'none';
-    });
+  document.getElementById('imageModal').addEventListener('click', () => {
+    document.getElementById('imageModal').style.display = 'none';
+  });
 };
