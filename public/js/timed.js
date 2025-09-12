@@ -108,7 +108,14 @@ const loadQuestion = async (index) => {
     quizWrapper.classList.add('loading');
 
     try {
-        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`);
+
+        const user = firebase.auth().currentUser;
+        if (!user) throw new Error('Not logged in');
+        const token = await user.getIdToken(false);
+
+        const response = await fetch(`https://ited.org.ec/getQuestion.php?id=${encodeURIComponent(questionId)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
         const data = await response.json();
         currentQuestion = data;
 
@@ -132,7 +139,7 @@ const loadQuestion = async (index) => {
                 renderDdwtosTimed(currentQuestion, files);
             } else {
                 answersDiv.innerHTML = '<p class="text-danger">Unsupported question type.</p>';
-                submitBtn.disabled = true;
+                //submitBtn.disabled = true;
                 document.getElementById('nextBtn').disabled = true;
             }
 
