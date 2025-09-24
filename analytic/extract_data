@@ -1,0 +1,62 @@
+import json
+import os
+
+def process_user_logs_for_elasticsearch(input_file_path, output_file_path):
+    """
+    Reads a JSON file, extracts user log data, and formats it for
+    Elasticsearch upload, saving it to a new file.
+
+    Args:
+        input_file_path (str): The path to the input JSON file.
+        output_file_path (str): The path to the output JSON file.
+    """
+    try:
+        with open(input_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: The input file was not found at '{input_file_path}'")
+        return
+    except json.JSONDecodeError:
+        print(f"Error: The file '{input_file_path}' is not a valid JSON.")
+        return
+
+    user_logs = data.get('userLogs', {})
+    
+    # Prepare the output directory, if necessary
+    output_dir = os.path.dirname(output_file_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    processed_logs = []
+    
+    # Access nested data according to the file structure
+    for user_id, user_sessions in user_logs.items():
+        if isinstance(user_sessions, dict):
+            for session_key, session_data in user_sessions.items():
+                if isinstance(session_data, dict):
+                    # Extract data for the requested fields, handling missing keys
+                    log_entry = {
+                        "user_id": user_id,
+                        "session_id": session_data.get('session', {}).get('id', None),
+                        "session_mode": session_data.get('session', {}).get('mode', None),
+                        "question_correct": session_data.get('question', {}).get('correct', None),
+                        "question_id": session_data.get('question', {}).get('id', None),
+                        "event_duration": session_data.get('event', {}).get('duration', None),
+                        "timestamp": session_data.get('@timestamp', None),
+                        "question_selected": session_data.get('question', {}).get('selected', None)
+                    }
+                    processed_logs.append(log_entry)
+
+    # Write the data to the output file, one JSON object per line
+    with open(output_file_path, 'w', encoding='utf-8') as f:
+        for log in processed_logs:
+            f.write(json.dumps(log) + '\n')
+    
+    print(f"Processing complete. {len(processed_logs)} records exported to '{output_file_path}'.")
+
+if __name__ == '__main__':
+    # Define file paths. Adjust as needed.
+    input_file_path = r'D:\Project_Nexus_ITED\ccna-vp-default-rtdb-export (1).json'
+    output_file_path = r'D:\Project_Nexus_ITED\elasticsearch_output.json'
+    
+    process_user_logs_for_elasticsearch(input_file_path, output_file_path)
