@@ -5,7 +5,7 @@
       <text>Q1</text>
     </name>
     <questiontext format="html">
-      <text><![CDATA[<p><b>11 AAA stands for authentication, authorization, and accounting</b></p>]]></text>
+      <text><![CDATA[<p><b>1 AAA stands for authentication, authorization, and accounting</b></p>]]></text>
     </questiontext>
     <generalfeedback format="html">
       <text></text>
@@ -32,7 +32,7 @@
       <text>Q2</text>
     </name>
     <questiontext format="html">
-      <text><![CDATA[<p><b>22 AAA stands for authentication, authorization, and accounting</b></p>]]></text>
+      <text><![CDATA[<p><b>2 TCP is a connection-oriented protocol in the OSI model.</b></p>]]></text>
     </questiontext>
     <generalfeedback format="html">
       <text></text>
@@ -59,7 +59,7 @@
       <text>Q3</text>
     </name>
     <questiontext format="html">
-      <text><![CDATA[<p><b>33 AAA stands for authentication, authorization, and accounting</b></p>]]></text>
+      <text><![CDATA[<p><b>3 SSH encrypts communications to provide security over insecure networks like the Internet.</b></p>]]></text>
     </questiontext>
     <generalfeedback format="html">
       <text></text>
@@ -86,7 +86,7 @@
       <text>Q4</text>
     </name>
     <questiontext format="html">
-      <text><![CDATA[<p><b>44 AAA stands for authentication, authorization, and accounting</b></p>]]></text>
+      <text><![CDATA[<p><b>4 The OSI model consists of 5 main layers</b></p>]]></text>
     </questiontext>
     <generalfeedback format="html">
       <text></text>
@@ -113,7 +113,7 @@
       <text>Q5</text>
     </name>
     <questiontext format="html">
-      <text><![CDATA[<p><b>55 AAA stands for authentication, authorization, and accounting</b></p>]]></text>
+      <text><![CDATA[<p><b>5 DNS translates domain names into IP addresses.</b></p>]]></text>
     </questiontext>
     <generalfeedback format="html">
       <text></text>
