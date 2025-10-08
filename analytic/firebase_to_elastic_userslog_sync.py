@@ -1,0 +1,84 @@
+#pip install firebase_admin
+#pip install firebase-admin
+import json
+import firebase_admin
+from firebase_admin import credentials, db
+import requests
+
+# Firebase configuration
+service_account_path = r"tic-tac-toe-testing-env-firebase-adminsdk-fbsvc-a4a6be42e7.json"  # Firebase service account key
+firebase_url = "https://tic-tac-toe-testing-env-default-rtdb.firebaseio.com/" # DataBase URL
+
+# Elasticsearch configuration
+es_url = "http://localhost:9200"  # Elasticsearch URL
+es_index = "nexus_ited_userlogs"             # Elasticsearch index name
+es_api_key = "YOUR_API_KEY_HERE"  # Replace with your Elasticsearch API key
+
+# Initialize Firebase only once
+if not firebase_admin._apps:
+    cred = credentials.Certificate(service_account_path)
+    firebase_admin.initialize_app(cred, {
+        "databaseURL": firebase_url
+    })
+
+def extract_fields(record):
+    """Extract only the required fields from a Firebase log record"""
+    return {
+        "session_id": record.get("session", {}).get("id"),
+        "session_mode": record.get("session", {}).get("mode"),
+        "question_correct": record.get("question", {}).get("correct"),
+        "question_id": record.get("question", {}).get("id"),
+        "event_duration": record.get("event", {}).get("duration"),
+        "user_id": record.get("user", {}).get("id"),
+        "timestamp": record.get("@timestamp"),
+        "question_selected": record.get("question", {}).get("selected")
+    }
+
+def get_data_from_firebase():
+    """Fetch all userLogs from Firebase"""
+    ref = db.reference("userLogs")
+    return ref.get()
+
+def clear_elasticsearch_index():
+    """Delete the entire index from Elasticsearch"""
+    headers = {"Authorization": f"ApiKey {es_api_key}"}
+    response = requests.delete(f"{es_url}/{es_index}", headers=headers)
+    if response.status_code in (200, 202):
+        print(f"🗑️ Index '{es_index}' deleted successfully.")
+    else:
+        print(f"⚠️ Warning when deleting index: {response.status_code} {response.text}")
+
+def send_to_elasticsearch(records):
+    """Send records to Elasticsearch using the bulk API"""
+    bulk_payload = ""
+    for record in records:
+        bulk_payload += json.dumps({"index": {"_index": es_index}}) + "\n"
+        bulk_payload += json.dumps(record, ensure_ascii=False) + "\n"
+
+    headers = {
+        "Content-Type": "application/x-ndjson",
+        "Authorization": f"ApiKey {es_api_key}"
+    }
+    response = requests.post(f"{es_url}/_bulk", headers=headers, data=bulk_payload.encode("utf-8"))
+
+    if 200 <= response.status_code < 300:
+        print("✅ Data successfully sent to Elasticsearch!")
+    else:
+        print(f"❌ Error sending data: {response.status_code}\n{response.text}")
+
+def main():
+    print("🔄 Clearing old index from Elasticsearch...")
+    clear_elasticsearch_index()
+
+    data = get_data_from_firebase()
+    records = []
+
+    for user_logs in data.values():
+        for log in user_logs.values():
+            records.append(extract_fields(log))
+
+    print(f"📥 Extracted {len(records)} records from Firebase.")
+    send_to_elasticsearch(records)
+
+if __name__ == "__main__":
+    main()
